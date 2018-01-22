@@ -148,10 +148,10 @@ int grab_directions(int atom){
 			picker[count] = i;
 			count++;
 		}
-		else if (neighb == EDGE_SPACE){
+		/*else if (neighb == EDGE_SPACE){
 			picker[count] = EDGE_SPACE; 
 			count++;
-		}
+		}*/
 	}
 	return count;
 }
@@ -221,7 +221,7 @@ void destroy_atom(int atom){
 
 void move_atom(int atom, int direction){
 	if (direction < 0){
-		if (direction == -2) destroy_atom(atom);
+		//if (direction == -2) destroy_atom(atom);
 		return;
 	}
 	old_neighbors(atom);
@@ -406,7 +406,7 @@ int main()
 		atom = pick_atom(rand1, rand2);
 		if (atom < 0){
 			fprintf(stderr, "No atom picked\n");
-			export_system("systemat" + to_string(i) + ".xyz", currentNumAtoms);
+			//export_system("systemat" + to_string(i) + ".xyz", currentNumAtoms);
 			cout << atom << " " << i << " " << atomToString(atom);
 			continue;
 		}
