@@ -12,15 +12,19 @@
 
 using namespace std;
 
+int destroyCount = 0;
+int createCount = 0;
+
 const int MAX_NUM_ATOMS = 600;
 const int INIT_NUM_ATOMS = 500;
 const float BOND = 4.0;//Bond strength
+const float RATE_OF_GEN = 5.0;
+
 const int RADIUS = 5;
 const int NUM_RATES = 13;
 const int ROWS = 100;
 const int COLS = 100;
 const int LAYS = 100;
-
 
 const int R = 0;
 const int C = 1;
@@ -30,6 +34,8 @@ const int Idx = 4;
 
 const int EMPTY_SPACE = -1;
 const int EDGE_SPACE = -2;
+const int FLOOR_SPACE = -3;
+const int GEN_ATOM = -4;
 
 const float RATES[] = { 12,
 11 * exp(-BOND),
@@ -65,6 +71,15 @@ const int DIR[12][3] = { { 1, 0, 0 },
 const float PRIM[3][3] = { { 1.0, 0.0, 0.0 },
 { 0.5, sqrt(3.0) / 2.0, 0.0 },
 { 0.5, 1.0 / sqrt(12.0), sqrt(2.0 / 3.0) } };
+
+int genPoints[8][3] = { { 1, 1, 1 },
+{ ROWS - 1, 1, 1 },
+{ 1, COLS - 1, 1 },
+{ 1, 1, LAYS - 1 },
+{ ROWS - 1, COLS - 1, 1 },
+{ ROWS - 1, 1, LAYS - 1 },
+{ 1, COLS - 1, LAYS - 1 },
+{ ROWS - 1, COLS - 1, LAYS - 1 } };
 
 int currentNumAtoms = 0;
 
@@ -113,8 +128,7 @@ int pick_atom(float rand1, int rand2){
 			return atomlist[i][rand2%census[i]];
 		}
 	}
-	fprintf(stderr, "No atom picked\n");
-	return -1;
+	return GEN_ATOM;
 }
 
 int count_neighbors(int atom){
@@ -148,10 +162,10 @@ int grab_directions(int atom){
 			picker[count] = i;
 			count++;
 		}
-		/*else if (neighb == EDGE_SPACE){
+		else if (neighb == EDGE_SPACE){
 			picker[count] = EDGE_SPACE; 
 			count++;
-		}*/
+		}
 	}
 	return count;
 }
@@ -171,7 +185,6 @@ void atom_change_list(int atom, int newlistnum){
 	inverselist[swapped_atom][Idx] = oldindex;
 	census[oldlistnum]--;
 	atomlist[newlistnum][census[newlistnum]] = atom;
-	//if newlist == 12, don't store atom!!!
 	inverselist[atom][N] = newlistnum;
 	inverselist[atom][Idx] = census[newlistnum];
 	census[newlistnum]++;
@@ -206,6 +219,7 @@ void new_neighbors(int atom){
 }
 
 void destroy_atom(int atom){
+	destroyCount++;
 	old_neighbors(atom);
 	unusedAtoms.push(atom);
 	domain[inverselist[atom][R]][inverselist[atom][C]][inverselist[atom][L]] = EMPTY_SPACE;
@@ -219,9 +233,34 @@ void destroy_atom(int atom){
 	currentNumAtoms--;
 }
 
+void create_atom(int rand3){
+	createCount++;
+	int index = rand3 % 8;
+	int pointr = genPoints[index][R];
+	int pointc = genPoints[index][C];
+	int pointl = genPoints[index][L];
+	if (domain[pointr][pointc][pointl] == EMPTY_SPACE){
+		int newAtom = unusedAtoms.top();
+		unusedAtoms.pop();
+		domain[pointr][pointc][pointl] = newAtom;
+		inverselist[newAtom][R] = pointr;
+		inverselist[newAtom][C] = pointc;
+		inverselist[newAtom][L] = pointl;
+		int newAtomList = count_neighbors(newAtom);
+		inverselist[newAtom][N] = newAtomList;
+		inverselist[newAtom][Idx] = census[newAtomList];
+		atomlist[newAtomList][census[newAtomList]] = newAtom;
+		census[newAtomList]++;
+		new_neighbors(newAtom);
+		currentNumAtoms++;
+	}
+}
+
 void move_atom(int atom, int direction){
 	if (direction < 0){
-		//if (direction == -2) destroy_atom(atom);
+		//Comment this line to remove the flux boundary conditions
+			if (direction == -2) destroy_atom(atom);
+		//////////////////////////////////////////////////////////
 		return;
 	}
 	old_neighbors(atom);
@@ -261,11 +300,10 @@ void export_system(string filename, int currentNumAtoms){
 }
 
 void init_rand(){
-	//domain = malloc(ROWS*COLS*LAYS*sizeof(int));
-	//mallocDomain();
-	memset(atomlist, -1, sizeof(atomlist[0][0])*(NUM_RATES - 1)*MAX_NUM_ATOMS);
+	memset(atomlist, -1, sizeof(atomlist[0][0])*(NUM_RATES)*MAX_NUM_ATOMS);
 	memset(census, 0, sizeof(census[0])*NUM_RATES);
 	memset(picker, -1, sizeof(picker[0])*(NUM_RATES - 1));
+	for (int i = MAX_NUM_ATOMS - 1; i > INIT_NUM_ATOMS - 1; i--) unusedAtoms.push(i);
 	random_device randy;
 	mt19937 rn(randy());
 	uniform_int_distribution<int> ur(1, ROWS - 2);
@@ -285,18 +323,18 @@ void init_rand(){
 		l = ur(rn);
 		if (domain[r][c][l] != -1) continue;
 		domain[r][c][l] = count;
-		inverselist[count][R] = r;// .set_row(r);// = r;
-		inverselist[count][C] = c;// .set_col(c);// = c;
-		inverselist[count][L] = l;// .set_lay(l);// = l;
+		inverselist[count][R] = r;
+		inverselist[count][C] = c;
+		inverselist[count][L] = l;
 		count++;
 	}
 	int number;
 	for (int atom = 0; atom < INIT_NUM_ATOMS; atom++){
 		number = count_neighbors(atom);
-		inverselist[atom][N] = number;// .set_listnum(number);// = number;
+		inverselist[atom][N] = number;
 		if (number != NUM_RATES - 1){
 			atomlist[number][census[number]] = atom;
-			inverselist[atom][Idx] = census[number];// .set_index(census[number]);// = census[number];
+			inverselist[atom][Idx] = census[number];
 			census[number]++;
 		}
 	}
@@ -304,7 +342,6 @@ void init_rand(){
 }
 
 void generateSphere(int atom, int& currentNumAtoms){
-	//if (currentNumAtoms > 500) return;
 	int r, c, l;
 	int sphereEdge = pow(RADIUS, 2);
 	for (int i = 0; i < NUM_RATES - 1; i++){
@@ -324,9 +361,10 @@ void generateSphere(int atom, int& currentNumAtoms){
 }
 
 void init_circ(int& currentNumAtoms){
-	memset(atomlist, -1, sizeof(atomlist[0][0])*(NUM_RATES - 1)*MAX_NUM_ATOMS);
+	memset(atomlist, -1, sizeof(atomlist[0][0])*(NUM_RATES)*MAX_NUM_ATOMS);
 	memset(census, 0, sizeof(census[0])*NUM_RATES);
 	memset(picker, -1, sizeof(picker[0])*(NUM_RATES - 1));
+	for (int i = MAX_NUM_ATOMS-1; i > INIT_NUM_ATOMS-1; i--) unusedAtoms.push(i);
 	for (int i = 0; i < ROWS; i++){
 		for (int j = 0; j < COLS; j++){
 			for (int k = 0; k < LAYS; k++){
@@ -350,11 +388,9 @@ void init_circ(int& currentNumAtoms){
 	for (int atom = 0; atom < currentNumAtoms; atom++){
 		number = count_neighbors(atom);
 		inverselist[atom][N] = number;
-		if (number != NUM_RATES - 1){
-			atomlist[number][census[number]] = atom;
-			inverselist[atom][Idx] = census[number];
-			census[number]++;
-		}
+		atomlist[number][census[number]] = atom;
+		inverselist[atom][Idx] = census[number];
+		census[number]++;
 	}
 }
 
@@ -389,7 +425,6 @@ int main()
 	random_device rd;
 	mt19937 rng(rd());
 	uniform_real_distribution<double> urd(0.0, 1.0);
-	//uniform_int_distribution<int> uid(0, INT_MAX);
 	clock_t t;
 	t = clock();
 	long double number;
@@ -399,17 +434,23 @@ int main()
 	int rand2, rand3, atom, direction;
 
 	for (i = numIt; i != -1; i--){
+		if (i % 50000000 == 0) {
+			cout << i << "\t" << unusedAtoms.size() << "\t" << destroyCount << "\t" << createCount << "\n";
+			export_system("systemat" + to_string(i) + ".xyz", currentNumAtoms);
+		}
 		number = urd(rng) * 10000000000;
 		rand1 = (number - (long long)number) * get_PN();
 		rand2 = (long long)number % 100000;
-		rand3 = (long long)number / 1000000;
+		rand3 = (long long)number / 100000;
 		atom = pick_atom(rand1, rand2);
 		if (atom < 0){
-			fprintf(stderr, "No atom picked\n");
-			//export_system("systemat" + to_string(i) + ".xyz", currentNumAtoms);
-			cout << atom << " " << i << " " << atomToString(atom);
+			fprintf(stderr, "no atom picked: %d\n", i);
 			continue;
 		}
+		/*if (atom == GEN_ATOM){
+			if (!unusedAtoms.empty()) create_atom(rand3);
+			continue;
+		}*/
 		direction = pick_direction(atom, rand3);
 		/*if (direction < 0) {
 			fprintf(stderr, "No Direction picked\n");
@@ -417,10 +458,6 @@ int main()
 			continue;
 		}*/
 		move_atom(atom, direction);
-		if (i % 50000000 == 0) {
-			cout << i << "\n"; 
-			export_system("systemat" + to_string(i) + ".xyz", currentNumAtoms);
-		}
 	}
 	t = clock() - t;
 	printf("Time to iterate %d times: %d\n", i, t);
